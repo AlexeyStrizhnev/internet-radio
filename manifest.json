@@ -1,0 +1,17 @@
+{
+  "name": "Интернет Радио PWA",
+  "short_name": "Радио PWA",
+  "description": "Интернет-радио плеер с поддержкой фонового воспроизведения",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f7fa",
+  "theme_color": "#3498db",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"512\" height=\"512\" viewBox=\"0 0 512 512\"><rect width=\"512\" height=\"512\" fill=\"%233498db\"/><text x=\"256\" y=\"256\" dominant-baseline=\"middle\" text-anchor=\"middle\" font-size=\"200\" fill=\"white\">📻</text></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

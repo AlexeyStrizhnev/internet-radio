@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#3498db">
+    <meta name="description" content="Интернет-радио плеер с поддержкой фонового воспроизведения">
+    <title>Интернет Радио PWA</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📻</text></svg>">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📻</text></svg>">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            color: #333;
+            min-height: 100vh;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eaeaea;
+            position: relative;
+        }
+
+        .pwa-badge {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: #3498db;
+            color: white;
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            border-radius: 10px;
+        }
+
+        h1 {
+            font-size: 2.2rem;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+
+        .description {
+            color: #7f8c8d;
+            margin-bottom: 20px;
+        }
+
+        .install-btn {
+            background: #2ecc71;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 50px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .install-btn:hover {
+            background: #27ae60;
+        }
+
+        .player-section {
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .now-playing {
+            background: rgba(236, 240, 241, 0.8);
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            min-height: 100px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .station-name {
+            font-weight: bold;
+            color: #3498db;
+            margin-bottom: 8px;
+            font-size: 1.2rem;
+        }
+
+        .track-info {
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: #2c3e50;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+
+        button {
+            background: #3498db;
+            border: none;
+            padding: 14px 25px;
+            border-radius: 50px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 160px;
+            justify-content: center;
+        }
+
+        button:hover {
+            background: #2980b9;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .button-icon {
+            width: 22px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+
+        .add-station {
+            margin: 25px 0;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        input {
+            flex: 1;
+            min-width: 250px;
+            padding: 14px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 50px;
+            background: white;
+            color: #333;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            border-color: #3498db;
+        }
+
+        input::placeholder {
+            color: #95a5a6;
+        }
+
+        .stations-list {
+            margin-top: 25px;
+        }
+
+        .stations-list h2 {
+            margin-bottom: 15px;
+            text-align: center;
+            color: #3498db;
+        }
+
+        .station-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(236, 240, 241, 0.6);
+            padding: 16px;
+            margin: 12px 0;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .station-item:hover {
+            background: rgba(236, 240, 241, 0.9);
+        }
+
+        .station-info {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            margin-right: 15px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .station-name-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+            min-width: 0;
+        }
+
+        .station-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .action-btn {
+            min-width: auto;
+            padding: 10px 16px;
+        }
+
+        .play-btn {
+            background: #2ecc71;
+        }
+
+        .play-btn:hover {
+            background: #27ae60;
+        }
+
+        .edit-btn {
+            background: #f39c12;
+        }
+
+        .edit-btn:hover {
+            background: #d35400;
+        }
+
+        .delete-btn {
+            background: #e74c3c;
+        }
+
+        .delete-btn:hover {
+            background: #c0392b;
+        }
+
+        .volume-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: center;
+        }
+
+        #volume {
+            width: 100px;
+        }
+
+        .notification {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2c3e50;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 50px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .notification.show {
+            opacity: 1;
+        }
+
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 1.8rem;
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+            
+            button {
+                width: 100%;
+            }
+            
+            .add-station {
+                flex-direction: column;
+            }
+            
+            input {
+                width: 100%;
+            }
+            
+            .station-item {
+                flex-direction: column;
+                gap: 12px;
+                text-align: center;
+            }
+            
+            .station-info {
+                margin-right: 0;
+                margin-bottom: 10px;
+                flex-direction: column;
+            }
+            
+            .station-actions {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .pwa-badge {
+                position: static;
+                margin-bottom: 10px;
+            }
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 30px;
+            color: #7f8c8d;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="pwa-badge">PWA</div>
+            <h1>📻 Интернет Радио PWA</h1>
+            <p class="description">Слушайте ваши любимые радиостанции даже когда приложение свёрнуто</p>
+            <button id="installButton" class="install-btn" style="display: none;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                </svg>
+                Установить приложение
+            </button>
+        </header>
+        
+        <div class="player-section">
+            <div class="now-playing">
+                <div class="station-name" id="stationName">Не выбрано</div>
+                <div class="track-info" id="trackInfo">Выберите радиостанцию для начала воспроизведения</div>
+            </div>
+            
+            <div class="controls">
+                <button id="playBtn" onclick="togglePlay()">
+                    <svg class="button-icon" viewBox="0 0 24 24" fill="white">
+                        <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    Воспроизвести
+                </button>
+                <button id="stopBtn" onclick="stopPlay()" disabled>
+                    <svg class="button-icon" viewBox="0 0 24 24" fill="white">
+                        <path d="M6 6h12v12H6z"/>
+                    </svg>
+                    Остановить
+                </button>
+            </div>
+
+            <div class="volume-control">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="#7f8c8d">
+                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                </svg>
+                <input type="range" id="volume" min="0" max="1" step="0.1" value="0.7" oninput="setVolume(this.value)">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="#7f8c8d">
+                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                </svg>
+            </div>
+        </div>
+
+        <div class="add-station">
+            <input type="text" id="stationUrl" placeholder="Введите URL радиостанции">
+            <button onclick="addStation()">
+                <svg class="button-icon" viewBox="0 0 24 24" fill="white">
+                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                </svg>
+                Добавить станцию
+            </button>
+        </div>
+
+        <div class="stations-list">
+            <h2>Список радиостанций</h2>
+            <div id="stationsList">
+                <!-- Список будет заполнен JavaScript -->
+            </div>
+        </div>
+
+        <footer>
+            <p>Интернет-радио плеер PWA © 2023 | Все станции принадлежат их правообладателям</p>
+        </footer>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <script>
+        // Переменные для управления аудио
+        let audio = null;
+        let currentStation = null;
+        let stations = JSON.parse(localStorage.getItem('radioStations')) || [];
+        let deferredPrompt = null;
+        
+        // Добавляем пример станции, если список пуст
+        if (stations.length === 0) {
+            stations.push({
+                url: 'https://pianosolo.streamguys1.com/live',
+                name: 'Piano Solo Radio'
+            });
+            saveStations();
+        }
+
+        // Регистрация Service Worker для PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(registration => {
+                    console.log('SW registered: ', registration);
+                }).catch(registrationError => {
+                    console.log('SW registration failed: ', registrationError);
+                });
+            });
+        }
+
+        // Обработчик для установки PWA
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            const installButton = document.getElementById('installButton');
+            if (installButton) {
+                installButton.style.display = 'inline-flex';
+                installButton.addEventListener('click', () => {
+                    installButton.style.display = 'none';
+                    deferredPrompt.prompt();
+                    deferredPrompt.userChoice.then((choiceResult) => {
+                        if (choiceResult.outcome === 'accepted') {
+                            console.log('User accepted the install prompt');
+                        }
+                        deferredPrompt = null;
+                    });
+                });
+            }
+        });
+
+        // Инициализация страницы
+        function initPage() {
+            renderStationsList();
+            // Восстанавливаем последнюю играющую станцию если есть
+            const lastStationIndex = localStorage.getItem('lastStationIndex');
+            if (lastStationIndex !== null && stations[lastStationIndex]) {
+                playStation(parseInt(lastStationIndex));
+            }
+            
+            // Инициализируем Media Session API для управления с уведомлений/блокировки
+            if ('mediaSession' in navigator) {
+                initMediaSession();
+            }
+        }
+
+        // Инициализация Media Session API
+        function initMediaSession() {
+            navigator.mediaSession.setActionHandler('play', function() {
+                if (audio && audio.paused) {
+                    togglePlay();
+                } else if (!audio && stations.length > 0) {
+                    playStation(0);
+                }
+            });
+
+            navigator.mediaSession.setActionHandler('pause', function() {
+                if (audio && !audio.paused) {
+                    togglePlay();
+                }
+            });
+
+            navigator.mediaSession.setActionHandler('stop', function() {
+                stopPlay();
+            });
+        }
+
+        // Обновление метаданных для Media Session
+        function updateMediaMetadata(stationName) {
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: stationName,
+                    artist: 'Интернет Радио',
+                    artwork: [
+                        { src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><rect width="512" height="512" fill="%233498db"/><text x="256" y="256" dominant-baseline="middle" text-anchor="middle" font-size="200" fill="white">📻</text></svg>', sizes: '512x512', type: 'image/svg' }
+                    ]
+                });
+            }
+        }
+
+        // Сохранение станций в localStorage
+        function saveStations() {
+            localStorage.setItem('radioStations', JSON.stringify(stations));
+        }
+
+        // Отображение списка станций
+        function renderStationsList() {
+            const list = document.getElementById('stationsList');
+            // Очищаем только элементы станций, оставляя заголовок
+            const items = list.querySelectorAll('.station-item');
+            items.forEach(item => item.remove());
+            
+            stations.forEach((station, index) => {
+                const stationItem = document.createElement('div');
+                stationItem.className = 'station-item';
+                stationItem.innerHTML = `
+                    <div class="station-info">
+                        <span class="station-name-text">${station.name}</span>
+                        <input class="station-name-input" value="${station.name}" style="display: none;" 
+                            onkeypress="handleStationNameEdit(event, ${index})" 
+                            onblur="saveStationName(${index})">
+                    </div>
+                    <div class="station-actions">
+                        <button class="action-btn play-btn" onclick="playStation(${index})">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                        </button>
+                        <button class="action-btn edit-btn" onclick="toggleEditStationName(${index})">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+                                <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                            </svg>
+                        </button>
+                        <button class="action-btn delete-btn" onclick="deleteStation(${index})">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+                                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                            </svg>
+                        </button>
+                    </div>
+                `;
+                list.appendChild(stationItem);
+            });
+        }
+
+        // Показать уведомление
+        function showNotification(message) {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.classList.add('show');
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+
+        // Переключение режима редактирования названия станции
+        function toggleEditStationName(index) {
+            const stationItem = document.querySelectorAll('.station-item')[index];
+            const nameText = stationItem.querySelector('.station-name-text');
+            const nameInput = stationItem.querySelector('.station-name-input');
+            
+            if (nameText.style.display !== 'none') {
+                nameText.style.display = 'none';
+                nameInput.style.display = 'block';
+                nameInput.focus();
+                nameInput.select();
+            } else {
+                nameText.style.display = 'inline';
+                nameInput.style.display = 'none';
+                nameInput.value = nameText.textContent;
+            }
+        }
+
+        // Сохранение названия станции при редактировании
+        function saveStationName(index) {
+            const stationItem = document.querySelectorAll('.station-item')[index];
+            const nameText = stationItem.querySelector('.station-name-text');
+            const nameInput = stationItem.querySelector('.station-name-input');
+            
+            if (nameInput.value.trim() !== '') {
+                nameText.textContent = nameInput.value.trim();
+                stations[index].name = nameInput.value.trim();
+                saveStations();
+                
+                // Если редактируемая станция сейчас играет, обновляем отображаемое имя
+                if (currentStation === index) {
+                    document.getElementById('stationName').textContent = nameInput.value.trim();
+                    updateMediaMetadata(nameInput.value.trim());
+                }
+            }
+            
+            nameText.style.display = 'inline';
+            nameInput.style.display = 'none';
+        }
+
+        // Обработка нажатия Enter при редактировании названия
+        function handleStationNameEdit(event, index) {
+            if (event.key === 'Enter') {
+                saveStationName(index);
+            }
+        }
+
+        // Добавление новой станции
+        function addStation() {
+            const urlInput = document.getElementById('stationUrl');
+            const url = urlInput.value.trim();
+            
+            if (url && isValidUrl(url)) {
+                const name = extractDomainName(url);
+                stations.push({ url, name });
+                saveStations();
+                renderStationsList();
+                urlInput.value = '';
+                showNotification('Станция добавлена!');
+            } else {
+                alert('Пожалуйста, введите корректный URL радиостанции');
+            }
+        }
+
+        // Удаление станции
+        function deleteStation(index) {
+            if (confirm('Вы уверены, что хотите удалить эту радиостанцию?')) {
+                stations.splice(index, 1);
+                saveStations();
+                renderStationsList();
+                
+                // Если удаляемая станция была текущей, останавливаем воспроизведение
+                if (currentStation === index) {
+                    stopPlay();
+                }
+                
+                showNotification('Станция удалена');
+            }
+        }
+
+        // Воспроизведение выбранной станции
+        function playStation(index) {
+            stopPlay(); // Останавливаем текущее воспроизведение
+            
+            currentStation = index;
+            const station = stations[index];
+            
+            // Сохраняем индекс последней станции
+            localStorage.setItem('lastStationIndex', index);
+            
+            audio = new Audio(station.url);
+            audio.volume = document.getElementById('volume').value;
+            
+            // Устанавливаем атрибут для фонового воспроизведения
+            audio.setAttribute('playsinline', '');
+            audio.setAttribute('preload', 'auto');
+            
+            audio.play()
+                .then(() => {
+                    document.getElementById('playBtn').disabled = true;
+                    document.getElementById('stopBtn').disabled = false;
+                    document.getElementById('stationName').textContent = station.name;
+                    updateTrackInfo('Загрузка информации о треке...');
+                    
+                    // Обновляем медиа-метаданные для уведомлений
+                    updateMediaMetadata(station.name);
+                    
+                    // Меняем иконку на паузу
+                    const playIcon = document.querySelector('#playBtn .button-icon');
+                    playIcon.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+                    document.getElementById('playBtn').innerHTML = playIcon.outerHTML + ' Пауза';
+                    
+                    // Пытаемся получить метаданные трека
+                    try {
+                        audio.addEventListener('loadedmetadata', () => {
+                            updateTrackInfo('Станция загружена');
+                        });
+                    } catch (e) {
+                        updateTrackInfo('Станция загружена');
+                    }
+                })
+                .catch(error => {
+                    console.error('Ошибка воспроизведения:', error);
+                    updateTrackInfo('Ошибка воспроизведения');
+                    showNotification('Ошибка воспроизведения: проверьте URL');
+                });
+        }
+
+        // Переключение воспроизведения/паузы
+        function togglePlay() {
+            if (audio && !audio.paused) {
+                audio.pause();
+                const playIcon = document.querySelector('#playBtn .button-icon');
+                playIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+                document.getElementById('playBtn').innerHTML = playIcon.outerHTML + ' Воспроизвести';
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.playbackState = 'paused';
+                }
+            } else if (audio) {
+                audio.play()
+                    .then(() => {
+                        const playIcon = document.querySelector('#playBtn .button-icon');
+                        playIcon.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+                        document.getElementById('playBtn').innerHTML = playIcon.outerHTML + ' Пауза';
+                        if ('mediaSession' in navigator) {
+                            navigator.mediaSession.playbackState = 'playing';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Ошибка воспроизведения:', error);
+                        showNotification('Ошибка воспроизведения');
+                    });
+            } else if (stations.length > 0) {
+                // Если ничего не играет, но есть станции, воспроизводим первую
+                playStation(0);
+            }
+        }
+
+        // Остановка воспроизведения
+        function stopPlay() {
+            if (audio) {
+                audio.pause();
+                audio = null;
+            }
+            
+            const playBtn = document.getElementById('playBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            const stationNameEl = document.getElementById('stationName');
+            const trackInfoEl = document.getElementById('trackInfo');
+            
+            if (playBtn) playBtn.disabled = false;
+            if (stopBtn) stopBtn.disabled = true;
+            
+            // Возвращаем иконку воспроизведения
+            if (playBtn) {
+                const playIcon = document.querySelector('#playBtn .button-icon');
+                if (playIcon) {
+                    playIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+                    playBtn.innerHTML = playIcon.outerHTML + ' Воспроизвести';
+                }
+            }
+            
+            if (stationNameEl) stationNameEl.textContent = 'Не выбрано';
+            if (trackInfoEl) trackInfoEl.textContent = 'Выберите радиостанцию для начала воспроизведения';
+            
+            // Очищаем медиа-метаданные
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = null;
+                navigator.mediaSession.playbackState = 'none';
+            }
+            
+            currentStation = null;
+            
+            // Удаляем информацию о последней станции
+            localStorage.removeItem('lastStationIndex');
+        }
+
+        // Установка громкости
+        function setVolume(value) {
+            if (audio) {
+                audio.volume = value;
+            }
+        }
+
+        // Обновление информации о текущем треке
+        function updateTrackInfo(info) {
+            const trackInfoEl = document.getElementById('trackInfo');
+            if (trackInfoEl) {
+                trackInfoEl.textContent = info;
+            }
+        }
+
+        // Проверка валидности URL
+        function isValidUrl(url) {
+            try {
+                new URL(url);
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        // Извлечение имени домена для отображения
+        function extractDomainName(url) {
+            try {
+                const urlObj = new URL(url);
+                return urlObj.hostname.replace('www.', '').split('.')[0];
+            } catch (e) {
+                return 'Неизвестная станция';
+            }
+        }
+
+        // Инициализация при загрузке страницы
+        window.onload = initPage;
+    </script>
+
+    <script>
+        // Service Worker для фонового воспроизведения
+        const registerServiceWorker = async () => {
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registration = await navigator.serviceWorker.register('sw.js', {
+                        scope: './',
+                    });
+                    
+                    if (registration.installing) {
+                        console.log('Service worker installing');
+                    } else if (registration.waiting) {
+                        console.log('Service worker installed');
+                    } else if (registration.active) {
+                        console.log('Service worker active');
+                    }
+                } catch (error) {
+                    console.error(`Registration failed with ${error}`);
+                }
+            }
+        };
+
+        registerServiceWorker();
+    </script>
+</body>
+</html>
