@@ -1,11 +1,11 @@
 {
-  "name": "Интернет Радио PWA",
-  "short_name": "Радио PWA",
+  "name": "Интернет Радио",
+  "short_name": "Радио",
   "description": "Интернет-радио плеер с поддержкой фонового воспроизведения",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#f5f7fa",
-  "theme_color": "#3498db",
+  "theme_color": "#504f4c",
   "orientation": "portrait",
   "icons": [
     {
