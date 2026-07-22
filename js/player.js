@@ -142,6 +142,7 @@ const Player = (() => {
 
   function pause() {
     if (audio && isPlaying) {
+      generation++; // Invalidate any pending resumes
       audio.pause();
       isPlaying = false;
       clearFallbackTimer();
@@ -152,6 +153,7 @@ const Player = (() => {
   function resume() {
     if (!audio || isPlaying) return;
 
+    generation++; // Prevent duplicate resume() calls from racing
     const gen = generation;
     audio.play().then(() => {
       if (generation !== gen) return; // Replaced during resume

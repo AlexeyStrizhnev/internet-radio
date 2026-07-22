@@ -46,8 +46,8 @@ const API = (() => {
    * Fetch currently playing tracks for all stations
    * @returns {Promise<Array>} Array of {id, track: {artist, song, image200}}
    */
-  async function fetchNowPlaying() {
-    const response = await fetch(NOW_URL);
+  async function fetchNowPlaying(signal) {
+    const response = await fetch(NOW_URL, { signal });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }

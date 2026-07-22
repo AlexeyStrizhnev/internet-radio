@@ -15,6 +15,7 @@ const App = (() => {
   let nowPlayingData = [];
   let pollTimer = null;
   let pollInFlight = false;
+  let pollAbortController = null;  // Abort in-flight fetch on station switch
 
   /* ===== Data Helpers ===== */
 
@@ -89,10 +90,12 @@ const App = (() => {
     if (pollInFlight) return;
     pollInFlight = true;
     try {
-      nowPlayingData = await API.fetchNowPlaying();
+      nowPlayingData = await API.fetchNowPlaying(pollAbortController?.signal);
       updateCurrentTrack();
     } catch (e) {
-      console.warn('Now-playing poll failed:', e.message);
+      if (e.name !== 'AbortError') {
+        console.warn('Now-playing poll failed:', e.message);
+      }
     } finally {
       pollInFlight = false;
     }
@@ -117,11 +120,17 @@ const App = (() => {
 
   function startPolling() {
     stopPolling();
+    pollAbortController = new AbortController();
     pollNowPlaying(); // Immediate first poll
     pollTimer = setInterval(pollNowPlaying, POLL_INTERVAL);
   }
 
   function stopPolling() {
+    // Abort any in-flight fetch when switching stations
+    if (pollAbortController) {
+      pollAbortController.abort();
+      pollAbortController = null;
+    }
     if (pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
