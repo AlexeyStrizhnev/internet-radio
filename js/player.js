@@ -57,83 +57,70 @@ const Player = (() => {
       return;
     }
 
-    audio = new Audio(url);
-    audio.setAttribute('playsinline', '');
-    audio.volume = volume;
-    _track(audio);
+    // Use local `el` ref so catch handlers always reference the right element
+    const el = new Audio(url);
+    el.setAttribute('playsinline', '');
+    el.volume = volume;
+    _track(el);
+    audio = el;
 
-    audio.play().then(() => {
-      if (generation !== gen) return;
+    el.play().then(() => {
+      if (generation !== gen) { _destroyOne(el); return; }
       isPlaying = true;
       notifyState();
     }).catch((err) => {
-      if (generation !== gen) { _destroyOne(audio); return; }
+      if (generation !== gen) { _destroyOne(el); return; }
+      console.error('Player: play() failed for', station.title,
+        'url:', url, 'error:', err.name, err.message);
       if (err.name === 'NotAllowedError') {
-        _destroyOne(audio);
+        _destroyOne(el);
         isPlaying = false;
         currentStation = null;
         notifyState();
         window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
         return;
       }
-      _tryFallback(station, gen);
+      _tryFallback(el, station, gen, [url]);
     });
   }
 
-  function _tryFallback(station, gen) {
-    if (generation !== gen) return;
+  function _tryFallback(lastEl, station, gen, triedUrls) {
+    if (generation !== gen) { _destroyOne(lastEl); return; }
 
-    const urls = [station.stream_128, station.stream_64].filter(u => u);
-    if (!urls.length) {
-      _destroyOne(audio);
+    // Collect remaining URLs that haven't been tried yet
+    const fallbackUrls = [station.stream_128, station.stream_64].filter(
+      u => u && !triedUrls.includes(u)
+    );
+    if (!fallbackUrls.length) {
+      _destroyOne(lastEl);
       _stopInternal(gen);
+      console.error('Player: all URLs exhausted for', station.title,
+        'tried:', triedUrls);
       window.dispatchEvent(new CustomEvent('player-stream-exhausted', {
         detail: { stationId: station.id, title: station.title }
       }));
       return;
     }
 
-    // Stop the failed audio before trying next quality
-    if (audio) _destroyOne(audio);
+    _destroyOne(lastEl);
 
-    audio = new Audio(urls[0]);
-    audio.setAttribute('playsinline', '');
-    audio.volume = volume;
-    _track(audio);
+    const nextUrl = fallbackUrls[0];
+    const nextTried = triedUrls.concat(nextUrl);
+    const el = new Audio(nextUrl);
+    el.setAttribute('playsinline', '');
+    el.volume = volume;
+    _track(el);
+    audio = el;
 
-    audio.play().then(() => {
-      if (generation !== gen) return;
+    el.play().then(() => {
+      if (generation !== gen) { _destroyOne(el); return; }
       isPlaying = true;
       notifyState();
-    }).catch(() => {
-      if (generation !== gen) { _destroyOne(audio); return; }
-      // Try last resort (64)
-      const lastUrl = station.stream_64;
-      if (lastUrl && lastUrl !== urls[0]) {
-        if (audio) _destroyOne(audio);
-        audio = new Audio(lastUrl);
-        audio.setAttribute('playsinline', '');
-        audio.volume = volume;
-        _track(audio);
-        audio.play().then(() => {
-          if (generation !== gen) return;
-          isPlaying = true;
-          notifyState();
-        }).catch(() => {
-          if (generation !== gen) { _destroyOne(audio); return; }
-          _destroyOne(audio);
-          _stopInternal(gen);
-          window.dispatchEvent(new CustomEvent('player-stream-exhausted', {
-            detail: { stationId: station.id, title: station.title }
-          }));
-        });
-      } else {
-        _destroyOne(audio);
-        _stopInternal(gen);
-        window.dispatchEvent(new CustomEvent('player-stream-exhausted', {
-          detail: { stationId: station.id, title: station.title }
-        }));
-      }
+    }).catch((err) => {
+      if (generation !== gen) { _destroyOne(el); return; }
+      console.error('Player: fallback failed for', station.title,
+        'url:', nextUrl, 'error:', err.name, err.message);
+      _tryFallback(el, station, gen, nextTried);
     });
   }
 
@@ -149,13 +136,15 @@ const Player = (() => {
   function resume() {
     if (!audio || isPlaying) return;
     const gen = ++generation;
+    const el = audio;
 
-    audio.play().then(() => {
+    el.play().then(() => {
       if (generation !== gen) return;
       isPlaying = true;
       notifyState();
     }).catch((err) => {
       if (generation !== gen) return;
+      console.error('Player: resume() failed, error:', err.name, err.message);
       if (err.name === 'NotAllowedError') {
         _stopInternal(gen);
         window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
