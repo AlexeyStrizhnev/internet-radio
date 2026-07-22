@@ -3,6 +3,7 @@
 const UI = (() => {
   let stationClickCallback = null;
   let modalSubmitCallback = null;
+  let modalEditCallback = null;
 
   function $(id) { return document.getElementById(id); }
 
@@ -113,15 +114,37 @@ const UI = (() => {
   /* ===== Modal ===== */
 
   function showAddModal() {
+    modalIsEdit = false;
     const modal = $('addModal');
     const nameInput = $('addNameInput');
     const urlInput = $('addUrlInput');
+    const submitBtn = $('addSubmitBtn');
+    const title = modal ? modal.querySelector('h3') : null;
     if (modal) modal.style.display = 'flex';
+    if (title) title.textContent = 'Добавить станцию';
+    if (submitBtn) submitBtn.textContent = 'Добавить';
     if (nameInput) {
       nameInput.value = '';
       setTimeout(() => nameInput.focus(), 100);
     }
     if (urlInput) urlInput.value = '';
+  }
+
+  function showEditModal(name, url) {
+    modalIsEdit = true;
+    const modal = $('addModal');
+    const nameInput = $('addNameInput');
+    const urlInput = $('addUrlInput');
+    const submitBtn = $('addSubmitBtn');
+    const title = modal ? modal.querySelector('h3') : null;
+    if (modal) modal.style.display = 'flex';
+    if (title) title.textContent = 'Редактировать станцию';
+    if (submitBtn) submitBtn.textContent = 'Сохранить';
+    if (nameInput) {
+      nameInput.value = name || '';
+      setTimeout(() => nameInput.select(), 100);
+    }
+    if (urlInput) urlInput.value = url || '';
   }
 
   function hideAddModal() {
@@ -133,8 +156,17 @@ const UI = (() => {
     modalSubmitCallback = callback;
   }
 
+  function onModalEdit(callback) {
+    modalEditCallback = callback;
+  }
+
   function toggleDeleteBtn(show) {
     const btn = $('deleteBtn');
+    if (btn) btn.style.display = show ? 'flex' : 'none';
+  }
+
+  function toggleEditBtn(show) {
+    const btn = $('editBtn');
     if (btn) btn.style.display = show ? 'flex' : 'none';
   }
 
@@ -324,6 +356,8 @@ const UI = (() => {
   }
 
   /* ===== Modal events ===== */
+  let modalIsEdit = false;
+
   function setupModalEvents() {
     const modal = $('addModal');
     const nameInput = $('addNameInput');
@@ -343,7 +377,9 @@ const UI = (() => {
         if (urlInput) urlInput.focus();
         return;
       }
-      if (modalSubmitCallback) {
+      if (modalIsEdit && modalEditCallback) {
+        modalEditCallback({ name, url });
+      } else if (modalSubmitCallback) {
         modalSubmitCallback({ name, url });
       }
     }
@@ -381,9 +417,12 @@ const UI = (() => {
     updateTrackBar,
     updatePlayButton,
     showAddModal,
+    showEditModal,
     hideAddModal,
     onModalSubmit,
+    onModalEdit,
     toggleDeleteBtn,
+    toggleEditBtn,
     showToast,
     onStationClick,
     initDragDrop

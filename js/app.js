@@ -161,6 +161,7 @@ const App = (() => {
     localStorage.setItem(STORAGE_KEY_LAST, station.id);
     UI.highlightActive(station.id);
     UI.toggleDeleteBtn(!!station.isCustom);
+    UI.toggleEditBtn(!!station.isCustom);
     updateCurrentTrack();
   }
 
@@ -240,6 +241,35 @@ const App = (() => {
     UI.showToast('Станция добавлена');
   }
 
+  /* ===== Edit Custom Station ===== */
+
+  function handleEditStation({ name, url }) {
+    if (currentIndex < 0) return;
+    const station = mergedStations[currentIndex];
+    if (!station.isCustom) return;
+
+    if (!isValidUrl(url)) {
+      UI.showToast('Некорректный URL');
+      return;
+    }
+
+    // Update customStations
+    customStations[station._realIndex] = { name, url };
+    saveCustomStations();
+
+    // Rebuild merged list and find the edited station
+    mergeStations();
+    const idx = mergedStations.findIndex(s => s.id === station.id);
+    if (idx !== -1) {
+      currentIndex = idx;
+      updateCurrentTrack();
+    }
+
+    UI.renderGrid(mergedStations, station.id);
+    UI.hideAddModal();
+    UI.showToast('Станция обновлена');
+  }
+
   /* ===== Delete Custom Station ===== */
 
   function handleDeleteStation() {
@@ -266,6 +296,7 @@ const App = (() => {
     UI.updateTrackBar('', '', 'Выберите станцию');
     UI.updatePlayButton(false);
     UI.toggleDeleteBtn(false);
+    UI.toggleEditBtn(false);
 
     localStorage.removeItem(STORAGE_KEY_LAST);
     UI.showToast('Станция удалена');
@@ -318,6 +349,7 @@ const App = (() => {
 
     // Set up modal
     UI.onModalSubmit(handleAddStation);
+    UI.onModalEdit(handleEditStation);
 
     // Listen for stream exhaustion events
     window.addEventListener('player-stream-exhausted', (e) => {
@@ -363,6 +395,13 @@ const App = (() => {
       handleDeleteStation();
     });
 
+    document.getElementById('editBtn').addEventListener('click', () => {
+      if (currentIndex < 0) return;
+      const station = mergedStations[currentIndex];
+      if (!station.isCustom) return;
+      UI.showEditModal(station.title, station.url);
+    });
+
     document.getElementById('volumeSlider').addEventListener('input', (e) => {
       handleVolumeChange(e.target.value);
     });
@@ -386,6 +425,7 @@ const App = (() => {
         const station = mergedStations[currentIndex];
         UI.highlightActive(station.id);
         UI.toggleDeleteBtn(!!station.isCustom);
+        UI.toggleEditBtn(!!station.isCustom);
         UI.updateTrackBar('', '', station.title);
       }
     }

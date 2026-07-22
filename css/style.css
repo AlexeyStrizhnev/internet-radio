@@ -82,6 +82,25 @@ body {
   color: #e05555;
 }
 
+#editBtn {
+  width: 28px;
+  height: 28px;
+  background: #1a1a24;
+  border: 1px solid #2a2a3a;
+  color: #8a8a9a;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+#editBtn:active {
+  background: #252535;
+  color: #5b8def;
+}
+
 /* ===== Track Bar ===== */
 #trackBar {
   padding: 10px 16px;
