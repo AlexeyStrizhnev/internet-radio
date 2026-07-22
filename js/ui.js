@@ -114,11 +114,13 @@ const UI = (() => {
 
   function showAddModal() {
     const modal = $('addModal');
-    const input = $('addUrlInput');
+    const nameInput = $('addNameInput');
+    const urlInput = $('addUrlInput');
     if (modal) modal.style.display = 'flex';
-    if (input) {
-      input.value = '';
-      setTimeout(() => input.focus(), 100);
+    if (nameInput) nameInput.value = '';
+    if (urlInput) {
+      urlInput.value = '';
+      setTimeout(() => urlInput.focus(), 100);
     }
   }
 
@@ -319,8 +321,17 @@ const UI = (() => {
   /* ===== Modal events ===== */
   function setupModalEvents() {
     const modal = $('addModal');
-    const input = $('addUrlInput');
+    const nameInput = $('addNameInput');
+    const urlInput = $('addUrlInput');
     const submitBtn = $('addSubmitBtn');
+
+    function submit() {
+      const url = urlInput ? urlInput.value.trim() : '';
+      const name = nameInput ? nameInput.value.trim() : '';
+      if (url && modalSubmitCallback) {
+        modalSubmitCallback({ name, url });
+      }
+    }
 
     if (modal) {
       modal.addEventListener('click', (e) => {
@@ -328,22 +339,18 @@ const UI = (() => {
       });
     }
 
-    if (submitBtn && input) {
-      submitBtn.addEventListener('click', () => {
-        const url = input.value.trim();
-        if (url && modalSubmitCallback) {
-          modalSubmitCallback(url);
-        }
+    if (submitBtn && urlInput) {
+      submitBtn.addEventListener('click', submit);
+
+      urlInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') submit();
       });
 
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          const url = input.value.trim();
-          if (url && modalSubmitCallback) {
-            modalSubmitCallback(url);
-          }
-        }
-      });
+      if (nameInput) {
+        nameInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') submit();
+        });
+      }
     }
   }
 

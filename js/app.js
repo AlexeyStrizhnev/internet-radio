@@ -208,14 +208,14 @@ const App = (() => {
 
   /* ===== Custom Station Modal ===== */
 
-  function handleAddStation(url) {
+  function handleAddStation({ name, url }) {
     if (!isValidUrl(url)) {
       UI.showToast('Некорректный URL');
       return;
     }
 
-    const name = extractDomainName(url);
-    customStations.push({ name, url });
+    const displayName = name || extractDomainName(url);
+    customStations.push({ name: displayName, url });
     saveCustomStations();
     mergeStations();
 
