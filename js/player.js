@@ -7,6 +7,7 @@ const Player = (() => {
   let volume = 0.7;
   let generation = 0;
 
+  const _activeAudios = new Set();
   const stateListeners = [];
 
   function notifyState() {
@@ -16,53 +17,65 @@ const Player = (() => {
     }));
   }
 
-  /* Clean up current audio element without touching generation/state */
-  function _cleanupAudio() {
-    if (audio) {
-      audio.pause();
-      audio.src = '';
-      audio.load();
-      audio = null;
+  /* Track Audio element so we can destroy it on station switch */
+  function _track(a) {
+    _activeAudios.add(a);
+  }
+
+  /* Destroy ALL Audio elements — nuclear cleanup on station switch */
+  function _destroyAll() {
+    for (const a of _activeAudios) {
+      try { a.pause(); } catch (_) {}
+      try { a.src = ''; } catch (_) {}
+      try { a.load(); } catch (_) {}
     }
+    _activeAudios.clear();
+    audio = null;
+  }
+
+  /* Destroy one specific Audio and remove from tracking */
+  function _destroyOne(a) {
+    try { a.pause(); } catch (_) {}
+    try { a.src = ''; } catch (_) {}
+    try { a.load(); } catch (_) {}
+    _activeAudios.delete(a);
+    if (audio === a) audio = null;
   }
 
   function play(station) {
-    // Clean up previous audio
-    _cleanupAudio();
+    // NUCLEAR: kill every Audio from previous station
+    _destroyAll();
 
     const gen = ++generation;
     currentStation = station;
     isPlaying = false;
     notifyState();
 
-    // Pick the best available stream (prefer 320)
     const url = station.stream_320 || station.stream_128 || station.stream_64;
     if (!url) {
       console.error('No stream for:', station.title);
       return;
     }
 
-    // Create fresh Audio — simple, reliable
     audio = new Audio(url);
     audio.setAttribute('playsinline', '');
     audio.volume = volume;
+    _track(audio);
 
     audio.play().then(() => {
       if (generation !== gen) return;
       isPlaying = true;
       notifyState();
     }).catch((err) => {
-      if (generation !== gen) return;
-      // If browser blocked autoplay, stop and wait for user tap
+      if (generation !== gen) { _destroyOne(audio); return; }
       if (err.name === 'NotAllowedError') {
-        audio = null;
+        _destroyOne(audio);
         isPlaying = false;
         currentStation = null;
         notifyState();
         window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
         return;
       }
-      // Stream error — try 128, then 64
       _tryFallback(station, gen);
     });
   }
@@ -72,6 +85,7 @@ const Player = (() => {
 
     const urls = [station.stream_128, station.stream_64].filter(u => u);
     if (!urls.length) {
+      _destroyOne(audio);
       _stopInternal(gen);
       window.dispatchEvent(new CustomEvent('player-stream-exhausted', {
         detail: { stationId: station.id, title: station.title }
@@ -79,37 +93,42 @@ const Player = (() => {
       return;
     }
 
-    _cleanupAudio();
+    // Stop the failed audio before trying next quality
+    if (audio) _destroyOne(audio);
 
     audio = new Audio(urls[0]);
     audio.setAttribute('playsinline', '');
     audio.volume = volume;
+    _track(audio);
 
     audio.play().then(() => {
       if (generation !== gen) return;
       isPlaying = true;
       notifyState();
     }).catch(() => {
-      if (generation !== gen) return;
+      if (generation !== gen) { _destroyOne(audio); return; }
       // Try last resort (64)
       const lastUrl = station.stream_64;
       if (lastUrl && lastUrl !== urls[0]) {
-        _cleanupAudio();
+        if (audio) _destroyOne(audio);
         audio = new Audio(lastUrl);
         audio.setAttribute('playsinline', '');
         audio.volume = volume;
+        _track(audio);
         audio.play().then(() => {
           if (generation !== gen) return;
           isPlaying = true;
           notifyState();
         }).catch(() => {
-          if (generation !== gen) return;
+          if (generation !== gen) { _destroyOne(audio); return; }
+          _destroyOne(audio);
           _stopInternal(gen);
           window.dispatchEvent(new CustomEvent('player-stream-exhausted', {
             detail: { stationId: station.id, title: station.title }
           }));
         });
       } else {
+        _destroyOne(audio);
         _stopInternal(gen);
         window.dispatchEvent(new CustomEvent('player-stream-exhausted', {
           detail: { stationId: station.id, title: station.title }
@@ -146,16 +165,15 @@ const Player = (() => {
 
   function stop() {
     generation++;
-    _cleanupAudio();
+    _destroyAll();
     isPlaying = false;
     currentStation = null;
     notifyState();
   }
 
-  /* Internal stop that checks generation — used by fallback chains */
   function _stopInternal(gen) {
     if (generation !== gen) return;
-    _cleanupAudio();
+    _destroyAll();
     isPlaying = false;
     currentStation = null;
     notifyState();
