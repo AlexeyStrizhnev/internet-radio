@@ -30,16 +30,21 @@ const UI = (() => {
         card.setAttribute('draggable', 'true');
         const svgStr = station.svg_fill || station.svg_outline || '';
         if (svgStr) {
-          const wrapper = document.createElement('div');
-          wrapper.className = 'station-icon-wrapper';
-          wrapper.innerHTML = svgStr;
-          const svg = wrapper.querySelector('svg');
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(svgStr, 'image/svg+xml');
+          const svg = doc.querySelector('svg');
           if (svg) {
             svg.classList.add('station-icon');
             svg.setAttribute('width', '36');
             svg.setAttribute('height', '36');
             card.appendChild(svg);
           }
+        } else {
+          // Fallback: letter avatar
+          const avatar = document.createElement('div');
+          avatar.className = 'station-avatar';
+          avatar.textContent = (station.title || '?')[0].toUpperCase();
+          card.appendChild(avatar);
         }
       }
 
@@ -286,6 +291,18 @@ const UI = (() => {
         }
       }
 
+      touchDragEl = null;
+      touchStartIndex = -1;
+      dropIndex = -1;
+      touchMoved = false;
+    });
+
+    container.addEventListener('touchcancel', () => {
+      clearTimeout(longPressTimer);
+      if (touchDragEl && touchMoved) {
+        touchDragEl.classList.remove('dragging');
+        container.querySelectorAll('.drag-over').forEach(c => c.classList.remove('drag-over'));
+      }
       touchDragEl = null;
       touchStartIndex = -1;
       dropIndex = -1;

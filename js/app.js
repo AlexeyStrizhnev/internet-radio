@@ -254,6 +254,13 @@ const App = (() => {
       Player.setVolume(parseFloat(savedVolume));
     }
 
+    // Register Service Worker for PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(err => {
+        console.warn('SW registration failed:', err);
+      });
+    }
+
     // Fetch API stations
     try {
       UI.updateTrackBar('', '', 'Загрузка станций...');
@@ -273,6 +280,16 @@ const App = (() => {
 
     // Set up modal
     UI.onModalSubmit(handleAddStation);
+
+    // Listen for stream exhaustion events
+    window.addEventListener('player-stream-exhausted', (e) => {
+      UI.showToast('Не удалось воспроизвести: ' + e.detail.title);
+    });
+
+    // Listen for autoplay block events
+    window.addEventListener('player-autoplay-blocked', () => {
+      UI.showToast('Нажмите Play для начала воспроизведения');
+    });
 
     UI.renderGrid(mergedStations, null);
 

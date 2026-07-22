@@ -7,6 +7,7 @@ const Player = (() => {
   let isPlaying = false;
   let volume = 0.7;
   let fallbackTimer = null;
+  let currentListeners = null;
 
   const stateListeners = [];
   const QUALITY_KEYS = ['stream_320', 'stream_128', 'stream_64'];
@@ -35,25 +36,40 @@ const Player = (() => {
   function setupAudioListeners(station) {
     if (!audio) return;
 
-    audio.addEventListener('waiting', () => {
+    // Remove old listeners if any
+    if (currentListeners) {
+      audio.removeEventListener('waiting', currentListeners.waiting);
+      audio.removeEventListener('playing', currentListeners.playing);
+      audio.removeEventListener('stalled', currentListeners.stalled);
+      audio.removeEventListener('error', currentListeners.error);
+    }
+
+    const waiting = () => {
       // Buffer starvation — try lower quality
       clearFallbackTimer();
       fallbackTimer = setTimeout(() => {
         tryNextQuality(station);
       }, 3000); // 3s buffer wait before switching
-    });
+    };
 
-    audio.addEventListener('playing', () => {
+    const playing = () => {
       clearFallbackTimer();
-    });
+    };
 
-    audio.addEventListener('stalled', () => {
+    const stalled = () => {
       tryNextQuality(station);
-    });
+    };
 
-    audio.addEventListener('error', () => {
+    const error = () => {
       tryNextQuality(station);
-    });
+    };
+
+    currentListeners = { waiting, playing, stalled, error };
+
+    audio.addEventListener('waiting', waiting);
+    audio.addEventListener('playing', playing);
+    audio.addEventListener('stalled', stalled);
+    audio.addEventListener('error', error);
   }
 
   function tryNextQuality(station) {
@@ -61,20 +77,27 @@ const Player = (() => {
     const streams = getAvailableStreams(station);
     const nextIndex = currentQualityIndex + 1;
 
-    if (nextIndex < streams.length) {
-      const wasPlaying = isPlaying;
-      const currentTime = audio ? audio.currentTime : 0;
-      const streamUrl = streams[nextIndex];
-
-      if (audio) {
-        audio.pause();
-        audio = null;
-      }
-
-      currentQualityIndex = nextIndex;
-      initAudio(streamUrl, station, currentTime, wasPlaying);
+    if (nextIndex >= streams.length) {
+      // All qualities exhausted
+      stop();
+      // Dispatch custom event for app.js to handle
+      window.dispatchEvent(new CustomEvent('player-stream-exhausted', {
+        detail: { stationId: station.id, title: station.title }
+      }));
+      return;
     }
-    // If no more qualities to try, just keep retrying current
+
+    const wasPlaying = isPlaying;
+    const currentTime = audio ? audio.currentTime : 0;
+    const streamUrl = streams[nextIndex];
+
+    if (audio) {
+      audio.pause();
+      audio = null;
+    }
+
+    currentQualityIndex = nextIndex;
+    initAudio(streamUrl, station, currentTime, wasPlaying);
   }
 
   function initAudio(url, station, seekTime, autoPlay) {
@@ -90,8 +113,13 @@ const Player = (() => {
           isPlaying = true;
           notifyState();
         }
-      }).catch(() => {
-        // If play fails, try next quality immediately
+      }).catch((err) => {
+        if (err.name === 'NotAllowedError') {
+          // Browser blocked autoplay — don't downgrade quality
+          stop();
+          window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
+          return;
+        }
         tryNextQuality(station);
       });
     }
@@ -125,7 +153,13 @@ const Player = (() => {
       audio.play().then(() => {
         isPlaying = true;
         notifyState();
-      }).catch(() => {});
+      }).catch((err) => {
+        console.warn('Resume failed:', err.message);
+        if (err.name === 'NotAllowedError') {
+          stop();
+          window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
+        }
+      });
     }
   }
 
@@ -136,6 +170,7 @@ const Player = (() => {
       audio.src = '';
       audio = null;
     }
+    currentListeners = null;
     isPlaying = false;
     currentStation = null;
     currentQualityIndex = 0;
