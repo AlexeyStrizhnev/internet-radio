@@ -3,15 +3,24 @@
 const Player = (() => {
   let audio = null;
   let currentStation = null;
-  let currentQualityIndex = 0; // 0=320, 1=128, 2=64
+  let currentQualityIndex = 0;
   let isPlaying = false;
   let volume = 0.7;
   let fallbackTimer = null;
-  let currentListeners = null;
-  let generation = 0; // Incremented on each play() — prevents stale catch handlers
+  let generation = 0;
 
   const stateListeners = [];
   const QUALITY_KEYS = ['stream_320', 'stream_128', 'stream_64'];
+
+  // Single reusable Audio element — avoids teardown/creation race
+  function getAudio() {
+    if (!audio) {
+      audio = new Audio();
+      audio.setAttribute('playsinline', '');
+      audio.volume = volume;
+    }
+    return audio;
+  }
 
   function getAvailableStreams(station) {
     return QUALITY_KEYS
@@ -20,11 +29,10 @@ const Player = (() => {
   }
 
   function notifyState() {
-    const state = {
+    stateListeners.forEach(fn => fn({
       playing: isPlaying,
       stationId: currentStation ? currentStation.id : null
-    };
-    stateListeners.forEach(fn => fn(state));
+    }));
   }
 
   function clearFallbackTimer() {
@@ -34,21 +42,23 @@ const Player = (() => {
     }
   }
 
-  function setupAudioListeners(station, gen) {
-    if (!audio) return;
+  function removeListeners(el) {
+    if (!el._listeners) return;
+    el.removeEventListener('waiting', el._listeners.waiting);
+    el.removeEventListener('playing', el._listeners.playing);
+    el.removeEventListener('stalled', el._listeners.stalled);
+    el.removeEventListener('error', el._listeners.error);
+    el._listeners = null;
+  }
 
-    if (currentListeners) {
-      audio.removeEventListener('waiting', currentListeners.waiting);
-      audio.removeEventListener('playing', currentListeners.playing);
-      audio.removeEventListener('stalled', currentListeners.stalled);
-      audio.removeEventListener('error', currentListeners.error);
-    }
+  function setupListeners(el, station, gen) {
+    removeListeners(el);
 
     const waiting = () => {
-      if (generation !== gen) return; // Stale — audio was replaced
+      if (generation !== gen) return;
       clearFallbackTimer();
       fallbackTimer = setTimeout(() => {
-        if (generation === gen) tryNextQuality(station, gen);
+        if (generation === gen) switchQuality(station, gen);
       }, 3000);
     };
 
@@ -57,24 +67,24 @@ const Player = (() => {
     };
 
     const stalled = () => {
-      if (generation === gen) tryNextQuality(station, gen);
+      if (generation === gen) switchQuality(station, gen);
     };
 
     const error = () => {
-      if (generation === gen) tryNextQuality(station, gen);
+      if (generation === gen) switchQuality(station, gen);
     };
 
-    currentListeners = { waiting, playing, stalled, error };
-
-    audio.addEventListener('waiting', waiting);
-    audio.addEventListener('playing', playing);
-    audio.addEventListener('stalled', stalled);
-    audio.addEventListener('error', error);
+    el._listeners = { waiting, playing, stalled, error };
+    el.addEventListener('waiting', waiting);
+    el.addEventListener('playing', playing);
+    el.addEventListener('stalled', stalled);
+    el.addEventListener('error', error);
   }
 
-  function tryNextQuality(station, gen) {
-    if (generation !== gen) return; // Stale
+  function switchQuality(station, gen) {
+    if (generation !== gen) return;
     clearFallbackTimer();
+
     const streams = getAvailableStreams(station);
     const nextIndex = currentQualityIndex + 1;
 
@@ -86,69 +96,73 @@ const Player = (() => {
       return;
     }
 
-    const streamUrl = streams[nextIndex];
-    const currentTime = audio ? audio.currentTime : 0;
-
-    if (audio) {
-      audio.pause();
-      audio = null;
-    }
-
     currentQualityIndex = nextIndex;
-
-    // Small delay before trying next quality — gives browser time to settle
-    setTimeout(() => {
-      if (generation !== gen) return;
-      tryPlay(streamUrl, station, currentTime, gen, 0);
-    }, 400);
+    startStream(streams[nextIndex], station, gen);
   }
 
-  function tryPlay(url, station, seekTime, gen, attempt) {
-    const thisAudio = new Audio(url);
-    audio = thisAudio;
-    thisAudio.setAttribute('playsinline', '');
-    thisAudio.volume = volume;
-    setupAudioListeners(station, gen);
+  function startStream(url, station, gen, retryCount) {
+    if (generation !== gen) return;
+    retryCount = retryCount || 0;
 
-    thisAudio.play().then(() => {
-      if (generation !== gen || audio !== thisAudio) return;
-      thisAudio.currentTime = seekTime;
+    const el = getAudio();
+
+    // Re-attach listeners for this station+gen
+    setupListeners(el, station, gen);
+
+    // Set src — browser gracefully stops old stream
+    el.src = url;
+
+    el.play().then(() => {
+      if (generation !== gen) return;
       isPlaying = true;
       notifyState();
     }).catch((err) => {
-      if (generation !== gen || audio !== thisAudio) return;
+      if (generation !== gen) return;
+
       if (err.name === 'NotAllowedError') {
+        // Lost user gesture in retry — give up this chain
+        if (retryCount === 0) {
+          // First failure within click handler — the stream might need
+          // a moment; retry once without changing src (it's already set)
+          setTimeout(() => {
+            if (generation !== gen) return;
+            startStream(url, station, gen, 1);
+          }, 1000);
+          return;
+        }
+        // Give up — user needs to tap again
         stop();
         window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
         return;
       }
 
-      // Retry same stream once after delay before falling back
-      if (attempt === 0) {
+      // Other error (network, decode, etc.) — retry once, then fall back
+      if (retryCount === 0) {
         setTimeout(() => {
           if (generation !== gen) return;
-          tryPlay(url, station, seekTime, gen, 1);
-        }, 800);
+          startStream(url, station, gen, 1);
+        }, 1000);
         return;
       }
 
-      // Retry exhausted — try next quality
-      tryNextQuality(station, gen);
+      // Already retried — try lower quality
+      switchQuality(station, gen);
     });
   }
 
-  function initAudio(url, station, seekTime, autoPlay, gen) {
-    if (autoPlay) {
-      tryPlay(url, station, seekTime, gen, 0);
-    }
-  }
-
   function play(station) {
-    stop();
     generation++;
     const gen = generation;
 
+    // Stop current playback cleanly
+    if (audio) {
+      audio.pause();
+      removeListeners(audio);
+    }
+    clearFallbackTimer();
+    isPlaying = false;
     currentStation = station;
+    currentQualityIndex = 0;
 
     const streams = getAvailableStreams(station);
     if (streams.length === 0) {
@@ -156,12 +170,13 @@ const Player = (() => {
       return;
     }
 
-    initAudio(streams[0], station, 0, true, gen);
+    notifyState();
+    startStream(streams[0], station, gen, 0);
   }
 
   function pause() {
     if (audio && isPlaying) {
-      generation++; // Invalidate any pending resumes
+      generation++;
       audio.pause();
       isPlaying = false;
       clearFallbackTimer();
@@ -171,15 +186,15 @@ const Player = (() => {
 
   function resume() {
     if (!audio || isPlaying) return;
-
-    generation++; // Prevent duplicate resume() calls from racing
+    generation++;
     const gen = generation;
+
     audio.play().then(() => {
-      if (generation !== gen) return; // Replaced during resume
+      if (generation !== gen) return;
       isPlaying = true;
       notifyState();
     }).catch((err) => {
-      if (generation !== gen) return; // Replaced
+      if (generation !== gen) return;
       if (err.name === 'NotAllowedError') {
         stop();
         window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
@@ -188,14 +203,13 @@ const Player = (() => {
   }
 
   function stop() {
-    clearFallbackTimer();
     if (audio) {
       audio.pause();
+      removeListeners(audio);
       audio.src = '';
-      audio = null;
     }
-    currentListeners = null;
-    generation++; // Invalidate all in-flight handlers for old audio
+    clearFallbackTimer();
+    generation++;
     isPlaying = false;
     currentStation = null;
     currentQualityIndex = 0;
@@ -215,9 +229,7 @@ const Player = (() => {
   function setVolume(value) {
     const parsed = parseFloat(value);
     volume = isNaN(parsed) ? 0.7 : Math.max(0, Math.min(1, parsed));
-    if (audio) {
-      audio.volume = volume;
-    }
+    if (audio) audio.volume = volume;
   }
 
   function getState() {
@@ -231,9 +243,7 @@ const Player = (() => {
     stateListeners.push(callback);
   }
 
-  function onTrackUpdate(callback) {
-    // Reserved for future use — audio metadata events
-  }
+  function onTrackUpdate(callback) {}
 
   return {
     play, pause, resume, stop,
