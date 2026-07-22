@@ -1,8 +1,18 @@
 'use strict';
 
 const API = (() => {
-  const STATIONS_URL = 'https://www.radiorecord.ru/api/stations';
-  const NOW_URL = 'https://www.radiorecord.ru/api/stations/now/';
+  // Use direct API on localhost/file, proxy path on deployed (CORS workaround)
+  const isLocal = !window.location.hostname ||
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1';
+
+  const STATIONS_URL = isLocal
+    ? 'https://www.radiorecord.ru/api/stations'
+    : '/api/stations';
+
+  const NOW_URL = isLocal
+    ? 'https://www.radiorecord.ru/api/stations/now/'
+    : '/api/stations/now/';
 
   /**
    * Fetch all available radio stations
