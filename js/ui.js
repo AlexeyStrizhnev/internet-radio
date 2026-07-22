@@ -77,6 +77,9 @@ const UI = (() => {
     if (info) {
       if (artist && song) {
         info.textContent = `${artist} — ${song}`;
+      } else if (artist) {
+        // Custom station: show title directly, no metadata available
+        info.textContent = artist;
       } else if (stationName) {
         info.textContent = 'Загрузка...';
       } else {

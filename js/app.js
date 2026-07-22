@@ -103,7 +103,7 @@ const App = (() => {
 
     const station = mergedStations[currentIndex];
     if (station.isCustom) {
-      UI.updateTrackBar('', '', station.title);
+      UI.updateTrackBar(station.title, '', '');
       return;
     }
 
@@ -149,7 +149,7 @@ const App = (() => {
       Player.play(station);
     }
 
-    localStorage.setItem(STORAGE_KEY_LAST, String(index));
+    localStorage.setItem(STORAGE_KEY_LAST, station.id);
     UI.highlightActive(station.id);
     updateCurrentTrack();
   }
@@ -218,6 +218,14 @@ const App = (() => {
     customStations.push({ name, url });
     saveCustomStations();
     mergeStations();
+
+    // Custom station was appended within the custom-station block,
+    // shifting API station indices by one. Adjust currentIndex if it
+    // was pointing at an API station (index >= old custom count).
+    const oldCustomCount = customStations.length - 1; // before push
+    if (currentIndex >= oldCustomCount) {
+      currentIndex += 1;
+    }
 
     UI.renderGrid(mergedStations,
       currentIndex >= 0 ? mergedStations[currentIndex]?.id : null);
@@ -309,12 +317,15 @@ const App = (() => {
     });
 
     // Restore last station (highlight only, don't auto-play)
-    const lastIndex = localStorage.getItem(STORAGE_KEY_LAST);
-    if (lastIndex !== null && mergedStations[parseInt(lastIndex)]) {
-      currentIndex = parseInt(lastIndex);
-      const station = mergedStations[currentIndex];
-      UI.highlightActive(station.id);
-      UI.updateTrackBar('', '', station.title);
+    const lastId = localStorage.getItem(STORAGE_KEY_LAST);
+    if (lastId) {
+      const lastIdx = mergedStations.findIndex(s => String(s.id) === String(lastId));
+      if (lastIdx !== -1) {
+        currentIndex = lastIdx;
+        const station = mergedStations[currentIndex];
+        UI.highlightActive(station.id);
+        UI.updateTrackBar('', '', station.title);
+      }
     }
   }
 
