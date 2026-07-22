@@ -160,6 +160,7 @@ const App = (() => {
 
     localStorage.setItem(STORAGE_KEY_LAST, station.id);
     UI.highlightActive(station.id);
+    UI.toggleDeleteBtn(!!station.isCustom);
     updateCurrentTrack();
   }
 
@@ -237,6 +238,37 @@ const App = (() => {
       currentIndex >= 0 ? mergedStations[currentIndex]?.id : null);
     UI.hideAddModal();
     UI.showToast('Станция добавлена');
+  }
+
+  /* ===== Delete Custom Station ===== */
+
+  function handleDeleteStation() {
+    if (currentIndex < 0) return;
+    const station = mergedStations[currentIndex];
+    if (!station.isCustom) return;
+
+    if (!confirm('Удалить станцию «' + station.title + '»?')) return;
+
+    // Stop playback if this station is playing
+    Player.stop();
+
+    // Remove from customStations array
+    customStations.splice(station._realIndex, 1);
+    saveCustomStations();
+
+    // Reset state
+    currentIndex = -1;
+    stopPolling();
+
+    // Rebuild merged list and re-render
+    mergeStations();
+    UI.renderGrid(mergedStations, null);
+    UI.updateTrackBar('', '', 'Выберите станцию');
+    UI.updatePlayButton(false);
+    UI.toggleDeleteBtn(false);
+
+    localStorage.removeItem(STORAGE_KEY_LAST);
+    UI.showToast('Станция удалена');
   }
 
   /* ===== Volume ===== */
@@ -327,6 +359,10 @@ const App = (() => {
       UI.showAddModal();
     });
 
+    document.getElementById('deleteBtn').addEventListener('click', () => {
+      handleDeleteStation();
+    });
+
     document.getElementById('volumeSlider').addEventListener('input', (e) => {
       handleVolumeChange(e.target.value);
     });
@@ -349,6 +385,7 @@ const App = (() => {
         currentIndex = lastIdx;
         const station = mergedStations[currentIndex];
         UI.highlightActive(station.id);
+        UI.toggleDeleteBtn(!!station.isCustom);
         UI.updateTrackBar('', '', station.title);
       }
     }

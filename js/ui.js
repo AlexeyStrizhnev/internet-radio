@@ -133,6 +133,11 @@ const UI = (() => {
     modalSubmitCallback = callback;
   }
 
+  function toggleDeleteBtn(show) {
+    const btn = $('deleteBtn');
+    if (btn) btn.style.display = show ? 'flex' : 'none';
+  }
+
   /* ===== Toast ===== */
 
   function showToast(message) {
@@ -378,6 +383,7 @@ const UI = (() => {
     showAddModal,
     hideAddModal,
     onModalSubmit,
+    toggleDeleteBtn,
     showToast,
     onStationClick,
     initDragDrop
