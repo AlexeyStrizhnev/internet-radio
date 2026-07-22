@@ -37,6 +37,7 @@ const Player = (() => {
 
     audio.addEventListener('waiting', () => {
       // Buffer starvation — try lower quality
+      clearFallbackTimer();
       fallbackTimer = setTimeout(() => {
         tryNextQuality(station);
       }, 3000); // 3s buffer wait before switching
@@ -84,9 +85,11 @@ const Player = (() => {
 
     if (autoPlay) {
       audio.play().then(() => {
-        audio.currentTime = seekTime;
-        isPlaying = true;
-        notifyState();
+        if (audio) {
+          audio.currentTime = seekTime;
+          isPlaying = true;
+          notifyState();
+        }
       }).catch(() => {
         // If play fails, try next quality immediately
         tryNextQuality(station);
@@ -98,7 +101,6 @@ const Player = (() => {
     stop();
 
     currentStation = station;
-    currentQualityIndex = 0;
 
     const streams = getAvailableStreams(station);
     if (streams.length === 0) {
@@ -151,7 +153,8 @@ const Player = (() => {
   }
 
   function setVolume(value) {
-    volume = parseFloat(value);
+    const parsed = parseFloat(value);
+    volume = isNaN(parsed) ? 0.7 : Math.max(0, Math.min(1, parsed));
     if (audio) {
       audio.volume = volume;
     }
