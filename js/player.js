@@ -86,9 +86,8 @@ const Player = (() => {
       return;
     }
 
-    const wasPlaying = isPlaying;
-    const currentTime = audio ? audio.currentTime : 0;
     const streamUrl = streams[nextIndex];
+    const currentTime = audio ? audio.currentTime : 0;
 
     if (audio) {
       audio.pause();
@@ -96,31 +95,51 @@ const Player = (() => {
     }
 
     currentQualityIndex = nextIndex;
-    initAudio(streamUrl, station, currentTime, wasPlaying, gen);
+
+    // Small delay before trying next quality — gives browser time to settle
+    setTimeout(() => {
+      if (generation !== gen) return;
+      tryPlay(streamUrl, station, currentTime, gen, 0);
+    }, 400);
   }
 
-  function initAudio(url, station, seekTime, autoPlay, gen) {
+  function tryPlay(url, station, seekTime, gen, attempt) {
     const thisAudio = new Audio(url);
     audio = thisAudio;
     thisAudio.setAttribute('playsinline', '');
     thisAudio.volume = volume;
     setupAudioListeners(station, gen);
 
+    thisAudio.play().then(() => {
+      if (generation !== gen || audio !== thisAudio) return;
+      thisAudio.currentTime = seekTime;
+      isPlaying = true;
+      notifyState();
+    }).catch((err) => {
+      if (generation !== gen || audio !== thisAudio) return;
+      if (err.name === 'NotAllowedError') {
+        stop();
+        window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
+        return;
+      }
+
+      // Retry same stream once after delay before falling back
+      if (attempt === 0) {
+        setTimeout(() => {
+          if (generation !== gen) return;
+          tryPlay(url, station, seekTime, gen, 1);
+        }, 800);
+        return;
+      }
+
+      // Retry exhausted — try next quality
+      tryNextQuality(station, gen);
+    });
+  }
+
+  function initAudio(url, station, seekTime, autoPlay, gen) {
     if (autoPlay) {
-      thisAudio.play().then(() => {
-        if (generation !== gen || audio !== thisAudio) return; // Replaced
-        thisAudio.currentTime = seekTime;
-        isPlaying = true;
-        notifyState();
-      }).catch((err) => {
-        if (generation !== gen || audio !== thisAudio) return; // Replaced — ignore
-        if (err.name === 'NotAllowedError') {
-          stop();
-          window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
-          return;
-        }
-        tryNextQuality(station, gen);
-      });
+      tryPlay(url, station, seekTime, gen, 0);
     }
   }
 
