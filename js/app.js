@@ -1,3 +1,326 @@
 'use strict';
-// App module — initialization, polling, coordination
-const App = {};
+
+const App = (() => {
+  const STORAGE_KEY_CUSTOM = 'radio_custom_stations';
+  const STORAGE_KEY_ORDER = 'radio_station_order';
+  const STORAGE_KEY_LAST = 'radio_last_station';
+  const STORAGE_KEY_VOLUME = 'radio_volume';
+  const POLL_INTERVAL = 10000; // 10 seconds
+
+  // State
+  let apiStations = [];
+  let customStations = [];
+  let mergedStations = [];  // custom first, then API in saved order
+  let currentIndex = -1;
+  let nowPlayingData = [];
+  let pollTimer = null;
+
+  /* ===== Data Helpers ===== */
+
+  function loadCustomStations() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY_CUSTOM)) || [];
+    } catch { return []; }
+  }
+
+  function saveCustomStations() {
+    localStorage.setItem(STORAGE_KEY_CUSTOM, JSON.stringify(customStations));
+  }
+
+  function loadStationOrder() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY_ORDER)) || [];
+    } catch { return []; }
+  }
+
+  function saveStationOrder(order) {
+    localStorage.setItem(STORAGE_KEY_ORDER, JSON.stringify(order));
+  }
+
+  function extractDomainName(url) {
+    try {
+      return new URL(url).hostname.replace('www.', '');
+    } catch { return url; }
+  }
+
+  function isValidUrl(url) {
+    try { new URL(url); return true; } catch { return false; }
+  }
+
+  /* ===== Station Merging ===== */
+
+  function mergeStations() {
+    const savedOrder = loadStationOrder();
+
+    // Build custom station display objects
+    const customDisplay = customStations.map((cs, i) => ({
+      id: 'custom_' + i,
+      _realIndex: i,
+      title: cs.name || extractDomainName(cs.url),
+      url: cs.url,
+      isCustom: true,
+      svg_fill: '',
+      svg_outline: '',
+      stream_320: cs.url,
+      stream_128: cs.url,
+      stream_64: cs.url,
+      stream_hls: ''
+    }));
+
+    // Order API stations by saved order, then by original sort
+    const apiOrderMap = new Map();
+    savedOrder.forEach((id, idx) => apiOrderMap.set(id, idx));
+
+    const orderedApi = [...apiStations].sort((a, b) => {
+      const aOrder = apiOrderMap.has(a.id) ? apiOrderMap.get(a.id) : 9999;
+      const bOrder = apiOrderMap.has(b.id) ? apiOrderMap.get(b.id) : 9999;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return 0;
+    });
+
+    // Custom stations first, then API stations
+    mergedStations = [...customDisplay, ...orderedApi];
+  }
+
+  /* ===== Now Playing Polling ===== */
+
+  async function pollNowPlaying() {
+    try {
+      nowPlayingData = await API.fetchNowPlaying();
+      updateCurrentTrack();
+    } catch (e) {
+      console.warn('Now-playing poll failed:', e.message);
+    }
+  }
+
+  function updateCurrentTrack() {
+    if (currentIndex < 0 || !mergedStations[currentIndex]) return;
+
+    const station = mergedStations[currentIndex];
+    if (station.isCustom) {
+      UI.updateTrackBar('', '', station.title);
+      return;
+    }
+
+    const now = nowPlayingData.find(n => n.id === station.id);
+    if (now && now.track) {
+      UI.updateTrackBar(now.track.artist, now.track.song, station.title);
+    } else {
+      UI.updateTrackBar('', '', station.title);
+    }
+  }
+
+  function startPolling() {
+    stopPolling();
+    pollNowPlaying(); // Immediate first poll
+    pollTimer = setInterval(pollNowPlaying, POLL_INTERVAL);
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  /* ===== Playback ===== */
+
+  function playStationByIndex(index) {
+    if (index < 0 || index >= mergedStations.length) return;
+
+    currentIndex = index;
+    const station = mergedStations[index];
+
+    if (station.isCustom) {
+      // For custom stations, create a simple station object with the URL
+      Player.play({
+        id: station.id,
+        title: station.title,
+        stream_320: station.url,
+        stream_128: station.url,
+        stream_64: station.url
+      });
+    } else {
+      Player.play(station);
+    }
+
+    localStorage.setItem(STORAGE_KEY_LAST, String(index));
+    UI.highlightActive(station.id);
+    updateCurrentTrack();
+  }
+
+  function handleStationClick(station, displayIndex) {
+    if (currentIndex === displayIndex && Player.getState().playing) {
+      // Same station — toggle pause
+      Player.pause();
+    } else if (currentIndex === displayIndex && !Player.getState().playing) {
+      // Same station — resume
+      Player.resume();
+    } else {
+      // Different station — play
+      playStationByIndex(displayIndex);
+    }
+  }
+
+  function handlePrevNext(direction) {
+    if (!mergedStations.length) return;
+    const newIndex = direction === 'next'
+      ? Player.next(mergedStations, currentIndex)
+      : Player.prev(mergedStations, currentIndex);
+    playStationByIndex(newIndex);
+  }
+
+  /* ===== Drag & Drop Reorder ===== */
+
+  function handleReorder(fromIndex, toIndex) {
+    // Only reorder API stations (skip custom stations at the top)
+    const customCount = customStations.length;
+    if (fromIndex < customCount || toIndex < customCount) return;
+
+    const moved = mergedStations.splice(fromIndex, 1)[0];
+    mergedStations.splice(toIndex, 0, moved);
+
+    // Update currentIndex if needed
+    if (currentIndex === fromIndex) {
+      currentIndex = toIndex;
+    } else if (currentIndex > fromIndex && currentIndex <= toIndex) {
+      currentIndex--;
+    } else if (currentIndex < fromIndex && currentIndex >= toIndex) {
+      currentIndex++;
+    }
+
+    // Save new order of API station IDs
+    const apiIds = mergedStations
+      .filter(s => !s.isCustom)
+      .map(s => s.id);
+    saveStationOrder(apiIds);
+
+    // Re-render
+    UI.renderGrid(mergedStations,
+      currentIndex >= 0 ? mergedStations[currentIndex]?.id : null);
+  }
+
+  /* ===== Custom Station Modal ===== */
+
+  function handleAddStation(url) {
+    if (!isValidUrl(url)) {
+      UI.showToast('Некорректный URL');
+      return;
+    }
+
+    const name = extractDomainName(url);
+    customStations.push({ name, url });
+    saveCustomStations();
+    mergeStations();
+
+    UI.renderGrid(mergedStations,
+      currentIndex >= 0 ? mergedStations[currentIndex]?.id : null);
+    UI.hideAddModal();
+    UI.showToast('Станция добавлена');
+  }
+
+  /* ===== Volume ===== */
+
+  function handleVolumeChange(value) {
+    Player.setVolume(value);
+    localStorage.setItem(STORAGE_KEY_VOLUME, value);
+  }
+
+  /* ===== Init ===== */
+
+  async function init() {
+    // Load custom stations
+    customStations = loadCustomStations();
+
+    // Load saved volume
+    const savedVolume = localStorage.getItem(STORAGE_KEY_VOLUME);
+    if (savedVolume !== null) {
+      const volSlider = document.getElementById('volumeSlider');
+      if (volSlider) volSlider.value = savedVolume;
+      Player.setVolume(parseFloat(savedVolume));
+    }
+
+    // Fetch API stations
+    try {
+      UI.updateTrackBar('', '', 'Загрузка станций...');
+      apiStations = await API.fetchStations();
+    } catch (e) {
+      console.error('Failed to fetch stations:', e);
+      UI.updateTrackBar('', '', 'Ошибка загрузки');
+      UI.showToast('Не удалось загрузить станции');
+      apiStations = [];
+    }
+
+    // Merge and render
+    mergeStations();
+
+    // Set up station click handler BEFORE render (so cards get the callback)
+    UI.onStationClick(handleStationClick);
+
+    // Set up modal
+    UI.onModalSubmit(handleAddStation);
+
+    UI.renderGrid(mergedStations, null);
+
+    // Set up drag & drop
+    UI.initDragDrop('#stationsGrid', handleReorder);
+
+    // Connect UI buttons
+    document.getElementById('playBtn').addEventListener('click', () => {
+      if (currentIndex < 0 && mergedStations.length > 0) {
+        playStationByIndex(0);
+      } else if (Player.getState().playing) {
+        Player.pause();
+      } else if (currentIndex >= 0) {
+        Player.resume();
+      }
+    });
+
+    document.getElementById('prevBtn').addEventListener('click', () => {
+      handlePrevNext('prev');
+    });
+
+    document.getElementById('nextBtn').addEventListener('click', () => {
+      handlePrevNext('next');
+    });
+
+    document.getElementById('addBtn').addEventListener('click', () => {
+      UI.showAddModal();
+    });
+
+    document.getElementById('volumeSlider').addEventListener('input', (e) => {
+      handleVolumeChange(e.target.value);
+    });
+
+    // Player state listener
+    Player.onStateChange((state) => {
+      UI.updatePlayButton(state.playing);
+      if (state.playing) {
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    });
+
+    // Restore last station (highlight only, don't auto-play)
+    const lastIndex = localStorage.getItem(STORAGE_KEY_LAST);
+    if (lastIndex !== null && mergedStations[parseInt(lastIndex)]) {
+      currentIndex = parseInt(lastIndex);
+      const station = mergedStations[currentIndex];
+      UI.highlightActive(station.id);
+      UI.updateTrackBar('', '', station.title);
+    }
+
+    // PWA install prompt
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+    });
+  }
+
+  // Auto-init
+  document.addEventListener('DOMContentLoaded', init);
+
+  return { init };
+})();
