@@ -135,8 +135,12 @@ const Player = (() => {
 
   function resume() {
     if (!audio || isPlaying) return;
-    const gen = ++generation;
     const el = audio;
+    // If audio is already loading/playing (play() or _tryFallback in progress),
+    // don't interfere — the existing promise chain handles it
+    if (!el.paused) return;
+
+    const gen = ++generation;
 
     el.play().then(() => {
       if (generation !== gen) return;
