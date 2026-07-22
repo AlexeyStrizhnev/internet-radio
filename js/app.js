@@ -14,6 +14,7 @@ const App = (() => {
   let currentIndex = -1;
   let nowPlayingData = [];
   let pollTimer = null;
+  let pollInFlight = false;
 
   /* ===== Data Helpers ===== */
 
@@ -85,11 +86,15 @@ const App = (() => {
   /* ===== Now Playing Polling ===== */
 
   async function pollNowPlaying() {
+    if (pollInFlight) return;
+    pollInFlight = true;
     try {
       nowPlayingData = await API.fetchNowPlaying();
       updateCurrentTrack();
     } catch (e) {
       console.warn('Now-playing poll failed:', e.message);
+    } finally {
+      pollInFlight = false;
     }
   }
 
@@ -178,6 +183,7 @@ const App = (() => {
     if (fromIndex < customCount || toIndex < customCount) return;
 
     const moved = mergedStations.splice(fromIndex, 1)[0];
+    if (fromIndex < toIndex) toIndex--;
     mergedStations.splice(toIndex, 0, moved);
 
     // Update currentIndex if needed
@@ -310,13 +316,6 @@ const App = (() => {
       UI.highlightActive(station.id);
       UI.updateTrackBar('', '', station.title);
     }
-
-    // PWA install prompt
-    let deferredPrompt = null;
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-    });
   }
 
   // Auto-init
