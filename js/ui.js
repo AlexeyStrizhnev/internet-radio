@@ -65,7 +65,7 @@ const UI = (() => {
   function highlightActive(activeId) {
     document.querySelectorAll('.station-card').forEach(card => {
       card.classList.toggle('active',
-        parseInt(card.dataset.stationId) === activeId);
+        String(card.dataset.stationId) === String(activeId));
     });
   }
 
@@ -156,12 +156,6 @@ const UI = (() => {
     let dragIndex = -1;
     let dropIndex = -1;
 
-    function getCardIndex(el) {
-      const card = el.closest('.station-card');
-      if (!card) return -1;
-      return parseInt(card.dataset.index);
-    }
-
     function handleDragStart(e) {
       const card = e.target.closest('.station-card');
       if (!card) return;
@@ -169,7 +163,7 @@ const UI = (() => {
       if (card.querySelector('.station-avatar')) return;
 
       dragEl = card;
-      dragIndex = getCardIndex(card);
+      dragIndex = parseInt(card.dataset.index);
       dragEl.classList.add('dragging');
 
       if (e.dataTransfer) {
@@ -226,7 +220,6 @@ const UI = (() => {
     // Touch drag-and-drop
     let touchDragEl = null;
     let touchStartIndex = -1;
-    let touchClone = null;
     let touchStartX = 0;
     let touchStartY = 0;
     let touchMoved = false;
@@ -268,7 +261,7 @@ const UI = (() => {
 
       const touch = e.touches[0];
       const elements = document.elementsFromPoint(touch.clientX, touch.clientY);
-      const cardUnder = elements.find(el => el.classList.contains('station-card'));
+      const cardUnder = [...elements].find(el => el.classList.contains('station-card'));
 
       container.querySelectorAll('.drag-over').forEach(c => c.classList.remove('drag-over'));
 
@@ -304,7 +297,7 @@ const UI = (() => {
   }
 
   /* ===== Modal events ===== */
-  document.addEventListener('DOMContentLoaded', () => {
+  function setupModalEvents() {
     const modal = $('addModal');
     const input = $('addUrlInput');
     const submitBtn = $('addSubmitBtn');
@@ -323,7 +316,7 @@ const UI = (() => {
         }
       });
 
-      input.addEventListener('keypress', (e) => {
+      input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           const url = input.value.trim();
           if (url && modalSubmitCallback) {
@@ -332,7 +325,13 @@ const UI = (() => {
         }
       });
     }
-  });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupModalEvents);
+  } else {
+    setupModalEvents();
+  }
 
   return {
     renderGrid,
