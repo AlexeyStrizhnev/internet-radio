@@ -3,30 +3,12 @@
 const Player = (() => {
   let audio = null;
   let currentStation = null;
-  let currentQualityIndex = 0;
   let isPlaying = false;
   let volume = 0.7;
-  let fallbackTimer = null;
   let generation = 0;
+  let busy = false; // Guards against concurrent play/resume calls
 
   const stateListeners = [];
-  const QUALITY_KEYS = ['stream_320', 'stream_128', 'stream_64'];
-
-  // Single reusable Audio element — avoids teardown/creation race
-  function getAudio() {
-    if (!audio) {
-      audio = new Audio();
-      audio.setAttribute('playsinline', '');
-      audio.volume = volume;
-    }
-    return audio;
-  }
-
-  function getAvailableStreams(station) {
-    return QUALITY_KEYS
-      .map(k => station[k])
-      .filter(url => url && url.length > 0);
-  }
 
   function notifyState() {
     stateListeners.forEach(fn => fn({
@@ -35,60 +17,61 @@ const Player = (() => {
     }));
   }
 
-  function clearFallbackTimer() {
-    if (fallbackTimer) {
-      clearTimeout(fallbackTimer);
-      fallbackTimer = null;
+  function play(station) {
+    busy = false; // Reset from any previous stuck state
+
+    // Clean up previous audio
+    if (audio) {
+      audio.pause();
+      audio.src = '';
+      audio.load();
+      audio = null;
     }
+
+    generation++;
+    currentStation = station;
+    isPlaying = false;
+    busy = true;
+    notifyState();
+
+    // Pick the best available stream (prefer 320)
+    const url = station.stream_320 || station.stream_128 || station.stream_64;
+    if (!url) {
+      busy = false;
+      console.error('No stream for:', station.title);
+      return;
+    }
+
+    // Create fresh Audio — simple, reliable
+    audio = new Audio(url);
+    audio.setAttribute('playsinline', '');
+    audio.volume = volume;
+
+    audio.play().then(() => {
+      busy = false;
+      isPlaying = true;
+      notifyState();
+    }).catch((err) => {
+      busy = false;
+      // If browser blocked autoplay, stop and wait for user tap
+      if (err.name === 'NotAllowedError') {
+        audio = null;
+        isPlaying = false;
+        currentStation = null;
+        notifyState();
+        window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
+        return;
+      }
+      // Stream error — try 128, then 64
+      tryFallback(station);
+    });
   }
 
-  function removeListeners(el) {
-    if (!el._listeners) return;
-    el.removeEventListener('waiting', el._listeners.waiting);
-    el.removeEventListener('playing', el._listeners.playing);
-    el.removeEventListener('stalled', el._listeners.stalled);
-    el.removeEventListener('error', el._listeners.error);
-    el._listeners = null;
-  }
-
-  function setupListeners(el, station, gen) {
-    removeListeners(el);
-
-    const waiting = () => {
-      if (generation !== gen) return;
-      clearFallbackTimer();
-      fallbackTimer = setTimeout(() => {
-        if (generation === gen) switchQuality(station, gen);
-      }, 3000);
-    };
-
-    const playing = () => {
-      clearFallbackTimer();
-    };
-
-    const stalled = () => {
-      if (generation === gen) switchQuality(station, gen);
-    };
-
-    const error = () => {
-      if (generation === gen) switchQuality(station, gen);
-    };
-
-    el._listeners = { waiting, playing, stalled, error };
-    el.addEventListener('waiting', waiting);
-    el.addEventListener('playing', playing);
-    el.addEventListener('stalled', stalled);
-    el.addEventListener('error', error);
-  }
-
-  function switchQuality(station, gen) {
-    if (generation !== gen) return;
-    clearFallbackTimer();
-
-    const streams = getAvailableStreams(station);
-    const nextIndex = currentQualityIndex + 1;
-
-    if (nextIndex >= streams.length) {
+  function tryFallback(station) {
+    busy = true;
+    const urls = [station.stream_128, station.stream_64].filter(u => u);
+    if (!urls.length) {
+      busy = false;
       stop();
       window.dispatchEvent(new CustomEvent('player-stream-exhausted', {
         detail: { stationId: station.id, title: station.title }
@@ -96,82 +79,47 @@ const Player = (() => {
       return;
     }
 
-    currentQualityIndex = nextIndex;
-    startStream(streams[nextIndex], station, gen);
-  }
-
-  function startStream(url, station, gen, retryCount) {
-    if (generation !== gen) return;
-    retryCount = retryCount || 0;
-
-    const el = getAudio();
-
-    // Re-attach listeners for this station+gen
-    setupListeners(el, station, gen);
-
-    // Set src — browser gracefully stops old stream
-    el.src = url;
-
-    el.play().then(() => {
-      if (generation !== gen) return;
-      isPlaying = true;
-      notifyState();
-    }).catch((err) => {
-      if (generation !== gen) return;
-
-      if (err.name === 'NotAllowedError') {
-        // Lost user gesture in retry — give up this chain
-        if (retryCount === 0) {
-          // First failure within click handler — the stream might need
-          // a moment; retry once without changing src (it's already set)
-          setTimeout(() => {
-            if (generation !== gen) return;
-            startStream(url, station, gen, 1);
-          }, 1000);
-          return;
-        }
-        // Give up — user needs to tap again
-        stop();
-        window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
-        return;
-      }
-
-      // Other error (network, decode, etc.) — retry once, then fall back
-      if (retryCount === 0) {
-        setTimeout(() => {
-          if (generation !== gen) return;
-          startStream(url, station, gen, 1);
-        }, 1000);
-        return;
-      }
-
-      // Already retried — try lower quality
-      switchQuality(station, gen);
-    });
-  }
-
-  function play(station) {
-    generation++;
-    const gen = generation;
-
-    // Stop current playback cleanly
     if (audio) {
       audio.pause();
-      removeListeners(audio);
-    }
-    clearFallbackTimer();
-    isPlaying = false;
-    currentStation = station;
-    currentQualityIndex = 0;
-
-    const streams = getAvailableStreams(station);
-    if (streams.length === 0) {
-      console.error('No streams available for station:', station.title);
-      return;
+      audio.src = '';
+      audio = null;
     }
 
-    notifyState();
-    startStream(streams[0], station, gen, 0);
+    audio = new Audio(urls[0]);
+    audio.setAttribute('playsinline', '');
+    audio.volume = volume;
+
+    audio.play().then(() => {
+      busy = false;
+      isPlaying = true;
+      notifyState();
+    }).catch(() => {
+      // Try last resort (64)
+      const lastUrl = station.stream_64;
+      if (lastUrl && lastUrl !== urls[0]) {
+        if (audio) { audio.pause(); audio.src = ''; audio = null; }
+        audio = new Audio(lastUrl);
+        audio.setAttribute('playsinline', '');
+        audio.volume = volume;
+        audio.play().then(() => {
+          busy = false;
+          isPlaying = true;
+          notifyState();
+        }).catch(() => {
+          busy = false;
+          stop();
+          window.dispatchEvent(new CustomEvent('player-stream-exhausted', {
+            detail: { stationId: station.id, title: station.title }
+          }));
+        });
+      } else {
+        busy = false;
+        stop();
+        window.dispatchEvent(new CustomEvent('player-stream-exhausted', {
+          detail: { stationId: station.id, title: station.title }
+        }));
+      }
+    });
   }
 
   function pause() {
@@ -179,22 +127,21 @@ const Player = (() => {
       generation++;
       audio.pause();
       isPlaying = false;
-      clearFallbackTimer();
       notifyState();
     }
   }
 
   function resume() {
-    if (!audio || isPlaying) return;
+    if (!audio || isPlaying || busy) return;
+    busy = true;
     generation++;
-    const gen = generation;
 
     audio.play().then(() => {
-      if (generation !== gen) return;
+      busy = false;
       isPlaying = true;
       notifyState();
     }).catch((err) => {
-      if (generation !== gen) return;
+      busy = false;
       if (err.name === 'NotAllowedError') {
         stop();
         window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
@@ -203,27 +150,25 @@ const Player = (() => {
   }
 
   function stop() {
+    busy = false;
     if (audio) {
       audio.pause();
-      removeListeners(audio);
       audio.src = '';
+      audio.load();
+      audio = null;
     }
-    clearFallbackTimer();
     generation++;
     isPlaying = false;
     currentStation = null;
-    currentQualityIndex = 0;
     notifyState();
   }
 
-  function next(stations, currentIndex) {
-    if (!stations.length) return -1;
-    return (currentIndex + 1) % stations.length;
+  function next(stations, idx) {
+    return stations.length ? (idx + 1) % stations.length : -1;
   }
 
-  function prev(stations, currentIndex) {
-    if (!stations.length) return -1;
-    return (currentIndex - 1 + stations.length) % stations.length;
+  function prev(stations, idx) {
+    return stations.length ? (idx - 1 + stations.length) % stations.length : -1;
   }
 
   function setVolume(value) {
@@ -243,7 +188,7 @@ const Player = (() => {
     stateListeners.push(callback);
   }
 
-  function onTrackUpdate(callback) {}
+  function onTrackUpdate() {}
 
   return {
     play, pause, resume, stop,
