@@ -6,7 +6,6 @@ const Player = (() => {
   let isPlaying = false;
   let volume = 0.7;
   let generation = 0;
-  let busy = false; // Guards against concurrent play/resume calls
 
   const stateListeners = [];
 
@@ -17,27 +16,28 @@ const Player = (() => {
     }));
   }
 
-  function play(station) {
-    busy = false; // Reset from any previous stuck state
-
-    // Clean up previous audio
+  /* Clean up current audio element without touching generation/state */
+  function _cleanupAudio() {
     if (audio) {
       audio.pause();
       audio.src = '';
       audio.load();
       audio = null;
     }
+  }
 
-    generation++;
+  function play(station) {
+    // Clean up previous audio
+    _cleanupAudio();
+
+    const gen = ++generation;
     currentStation = station;
     isPlaying = false;
-    busy = true;
     notifyState();
 
     // Pick the best available stream (prefer 320)
     const url = station.stream_320 || station.stream_128 || station.stream_64;
     if (!url) {
-      busy = false;
       console.error('No stream for:', station.title);
       return;
     }
@@ -48,11 +48,11 @@ const Player = (() => {
     audio.volume = volume;
 
     audio.play().then(() => {
-      busy = false;
+      if (generation !== gen) return;
       isPlaying = true;
       notifyState();
     }).catch((err) => {
-      busy = false;
+      if (generation !== gen) return;
       // If browser blocked autoplay, stop and wait for user tap
       if (err.name === 'NotAllowedError') {
         audio = null;
@@ -63,58 +63,54 @@ const Player = (() => {
         return;
       }
       // Stream error — try 128, then 64
-      tryFallback(station);
+      _tryFallback(station, gen);
     });
   }
 
-  function tryFallback(station) {
-    busy = true;
+  function _tryFallback(station, gen) {
+    if (generation !== gen) return;
+
     const urls = [station.stream_128, station.stream_64].filter(u => u);
     if (!urls.length) {
-      busy = false;
-      stop();
+      _stopInternal(gen);
       window.dispatchEvent(new CustomEvent('player-stream-exhausted', {
         detail: { stationId: station.id, title: station.title }
       }));
       return;
     }
 
-    if (audio) {
-      audio.pause();
-      audio.src = '';
-      audio = null;
-    }
+    _cleanupAudio();
 
     audio = new Audio(urls[0]);
     audio.setAttribute('playsinline', '');
     audio.volume = volume;
 
     audio.play().then(() => {
-      busy = false;
+      if (generation !== gen) return;
       isPlaying = true;
       notifyState();
     }).catch(() => {
+      if (generation !== gen) return;
       // Try last resort (64)
       const lastUrl = station.stream_64;
       if (lastUrl && lastUrl !== urls[0]) {
-        if (audio) { audio.pause(); audio.src = ''; audio = null; }
+        _cleanupAudio();
         audio = new Audio(lastUrl);
         audio.setAttribute('playsinline', '');
         audio.volume = volume;
         audio.play().then(() => {
-          busy = false;
+          if (generation !== gen) return;
           isPlaying = true;
           notifyState();
         }).catch(() => {
-          busy = false;
-          stop();
+          if (generation !== gen) return;
+          _stopInternal(gen);
           window.dispatchEvent(new CustomEvent('player-stream-exhausted', {
             detail: { stationId: station.id, title: station.title }
           }));
         });
       } else {
-        busy = false;
-        stop();
+        _stopInternal(gen);
         window.dispatchEvent(new CustomEvent('player-stream-exhausted', {
           detail: { stationId: station.id, title: station.title }
         }));
@@ -132,32 +128,34 @@ const Player = (() => {
   }
 
   function resume() {
-    if (!audio || isPlaying || busy) return;
-    busy = true;
-    generation++;
+    if (!audio || isPlaying) return;
+    const gen = ++generation;
 
     audio.play().then(() => {
-      busy = false;
+      if (generation !== gen) return;
       isPlaying = true;
       notifyState();
     }).catch((err) => {
-      busy = false;
+      if (generation !== gen) return;
       if (err.name === 'NotAllowedError') {
-        stop();
+        _stopInternal(gen);
         window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
       }
     });
   }
 
   function stop() {
-    busy = false;
-    if (audio) {
-      audio.pause();
-      audio.src = '';
-      audio.load();
-      audio = null;
-    }
     generation++;
+    _cleanupAudio();
+    isPlaying = false;
+    currentStation = null;
+    notifyState();
+  }
+
+  /* Internal stop that checks generation — used by fallback chains */
+  function _stopInternal(gen) {
+    if (generation !== gen) return;
+    _cleanupAudio();
     isPlaying = false;
     currentStation = null;
     notifyState();
