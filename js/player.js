@@ -148,7 +148,13 @@ const Player = (() => {
       if (err.name === 'NotAllowedError') {
         _stopInternal(gen);
         window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
+        return;
       }
+      // Old audio element is dead (stream dropped, 404, etc.)
+      // Destroy it and re-init via play() with full fallback support
+      const st = currentStation;
+      _destroyOne(el);
+      if (st) play(st);
     });
   }
 
