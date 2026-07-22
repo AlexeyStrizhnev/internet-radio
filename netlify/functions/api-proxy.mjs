@@ -1,12 +1,25 @@
 // Netlify serverless function — CORS proxy for Radio Record API
 export default async function handler(req) {
-  const path = req.url.replace('/.netlify/functions/api-proxy', '') || '/stations';
-  const targetUrl = `https://www.radiorecord.ru/api${path}`;
+  // Extract the API path from the incoming request
+  // req.url can be absolute or relative depending on Netlify's rewrite behavior
+  let urlPath;
+  try {
+    urlPath = new URL(req.url).pathname;
+  } catch {
+    urlPath = req.url;
+  }
+
+  // Get everything after the /api/ prefix
+  // Handles: /api/stations, /api/stations/now/, /.netlify/functions/api-proxy/stations
+  const apiIdx = urlPath.indexOf('/api/');
+  const apiPath = apiIdx >= 0 ? urlPath.slice(apiIdx + 4) : '/stations';
+  const targetUrl = `https://www.radiorecord.ru/api${apiPath}`;
 
   try {
     const response = await fetch(targetUrl, {
       headers: {
-        'User-Agent': 'InternetRadioPWA/1.0'
+        'User-Agent': 'InternetRadioPWA/1.0',
+        'Accept': 'application/json'
       }
     });
 
