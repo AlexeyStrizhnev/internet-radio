@@ -117,11 +117,11 @@ const UI = (() => {
     const nameInput = $('addNameInput');
     const urlInput = $('addUrlInput');
     if (modal) modal.style.display = 'flex';
-    if (nameInput) nameInput.value = '';
-    if (urlInput) {
-      urlInput.value = '';
-      setTimeout(() => urlInput.focus(), 100);
+    if (nameInput) {
+      nameInput.value = '';
+      setTimeout(() => nameInput.focus(), 100);
     }
+    if (urlInput) urlInput.value = '';
   }
 
   function hideAddModal() {
@@ -328,7 +328,17 @@ const UI = (() => {
     function submit() {
       const url = urlInput ? urlInput.value.trim() : '';
       const name = nameInput ? nameInput.value.trim() : '';
-      if (url && modalSubmitCallback) {
+      if (!name) {
+        UI.showToast('Введите название станции');
+        if (nameInput) nameInput.focus();
+        return;
+      }
+      if (!url) {
+        UI.showToast('Введите URL радиостанции');
+        if (urlInput) urlInput.focus();
+        return;
+      }
+      if (modalSubmitCallback) {
         modalSubmitCallback({ name, url });
       }
     }

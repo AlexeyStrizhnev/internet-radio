@@ -221,8 +221,7 @@ const App = (() => {
       return;
     }
 
-    const displayName = name || extractDomainName(url);
-    customStations.push({ name: displayName, url });
+    customStations.push({ name, url });
     saveCustomStations();
     mergeStations();
 
