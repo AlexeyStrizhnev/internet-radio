@@ -167,11 +167,9 @@ const App = (() => {
     if (currentIndex === displayIndex && Player.getState().playing) {
       // Same station — toggle pause
       Player.pause();
-    } else if (currentIndex === displayIndex && !Player.getState().playing) {
-      // Same station — resume
-      Player.resume();
     } else {
-      // Different station — play
+      // Different station, or same station but paused — (re)start playback
+      // Always use playStationByIndex to avoid race with in-progress loading
       playStationByIndex(displayIndex);
     }
   }
@@ -312,7 +310,9 @@ const App = (() => {
       } else if (Player.getState().playing) {
         Player.pause();
       } else if (currentIndex >= 0) {
-        Player.resume();
+        // Use playStationByIndex instead of resume() — avoids race
+        // with concurrent play()/fallback on the same Audio element
+        playStationByIndex(currentIndex);
       }
     });
 
