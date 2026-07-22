@@ -8,6 +8,7 @@ const Player = (() => {
   let volume = 0.7;
   let fallbackTimer = null;
   let currentListeners = null;
+  let playPromise = null;  // Track in-flight play() to prevent race conditions
 
   const stateListeners = [];
   const QUALITY_KEYS = ['stream_320', 'stream_128', 'stream_64'];
@@ -107,15 +108,17 @@ const Player = (() => {
     setupAudioListeners(station);
 
     if (autoPlay) {
-      audio.play().then(() => {
+      playPromise = audio.play();
+      playPromise.then(() => {
+        playPromise = null;
         if (audio) {
           audio.currentTime = seekTime;
           isPlaying = true;
           notifyState();
         }
       }).catch((err) => {
+        playPromise = null;
         if (err.name === 'NotAllowedError') {
-          // Browser blocked autoplay — don't downgrade quality
           stop();
           window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
           return;
@@ -149,18 +152,22 @@ const Player = (() => {
   }
 
   function resume() {
-    if (audio && !isPlaying) {
-      audio.play().then(() => {
-        isPlaying = true;
-        notifyState();
-      }).catch((err) => {
-        console.warn('Resume failed:', err.message);
-        if (err.name === 'NotAllowedError') {
-          stop();
-          window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
-        }
-      });
-    }
+    // Don't call play() if one is already in flight or nothing to resume
+    if (playPromise || !audio || isPlaying) return;
+
+    playPromise = audio.play();
+    playPromise.then(() => {
+      playPromise = null;
+      isPlaying = true;
+      notifyState();
+    }).catch((err) => {
+      playPromise = null;
+      console.warn('Resume failed:', err.message);
+      if (err.name === 'NotAllowedError') {
+        stop();
+        window.dispatchEvent(new CustomEvent('player-autoplay-blocked'));
+      }
+    });
   }
 
   function stop() {
@@ -171,6 +178,7 @@ const Player = (() => {
       audio = null;
     }
     currentListeners = null;
+    playPromise = null;
     isPlaying = false;
     currentStation = null;
     currentQualityIndex = 0;

@@ -248,7 +248,7 @@ const UI = (() => {
         touchMoved = true;
         touchDragEl.classList.add('dragging');
         // Vibrate on drag start (if supported)
-        if (navigator.vibrate) navigator.vibrate(10);
+        try { if (navigator.vibrate) navigator.vibrate(10); } catch {}
       }, LONG_PRESS_MS);
     }, { passive: false });
 
